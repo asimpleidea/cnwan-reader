@@ -14,7 +14,7 @@
 //
 // All rights reserved.
 
-package sdhandler
+package serviceregistry
 
 import (
 	"context"

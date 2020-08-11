@@ -24,7 +24,7 @@ import (
 
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/poller"
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/queue"
-	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/sdhandler"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/serviceregistry"
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/services"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -34,7 +34,7 @@ var gcloudProject string
 var gcloudRegion string
 var datastore services.Datastore
 var sendQueue queue.Queue
-var sdHandler sdhandler.Handler
+var sdHandler serviceregistry.Handler
 
 // servicedirectoryCmd represents the servicedirectory command
 var servicedirectoryCmd = &cobra.Command{
@@ -76,7 +76,7 @@ func runServiceDirectory(cmd *cobra.Command, args []string) {
 	}
 
 	// Get the handler
-	sdHandler, err = sdhandler.New(ctx, gcloudRegion, metadataKey, gcloudProject, credsPath)
+	sdHandler, err = serviceregistry.New(ctx, gcloudRegion, metadataKey, gcloudProject, credsPath)
 	if err != nil {
 		l.Fatal().Err(err).Msg("error while trying to connect to service directory")
 	}

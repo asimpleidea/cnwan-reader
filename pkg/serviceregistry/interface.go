@@ -14,7 +14,12 @@
 //
 // All rights reserved.
 
-// Package sdhandler includes code that connects to Google Cloud Service
-// Directory and performs different operations on its resources, such as
-// creating a namespace, updating a service, deleting and endpoint etc.
-package sdhandler
+package serviceregistry
+
+import "github.com/CloudNativeSDWAN/cnwan-reader/pkg/openapi"
+
+// Handler is in charge of getting data from service directory
+type Handler interface {
+	// GetServices loads services from service directory
+	GetServices() map[string]*openapi.Service
+}
