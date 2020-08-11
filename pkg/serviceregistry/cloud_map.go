@@ -19,12 +19,21 @@ package serviceregistry
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/openapi"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/servicediscovery"
 	"github.com/rs/zerolog/log"
+)
+
+const (
+	awsIPv4Attr            string = "AWS_INSTANCE_IPV4"
+	awsIPv6Attr            string = "AWS_INSTANCE_IPV6"
+	awsPortAttr            string = "AWS_INSTANCE_PORT"
+	awsDefaultInstancePort int32  = 80
 )
 
 type awsCloudMap struct {
@@ -73,14 +82,22 @@ func (a *awsCloudMap) GetServices() map[string]*openapi.Service {
 			continue
 		}
 
-		// TODO
-		_ = instances
+		for _, inst := range instances {
+			data, err := a.getServiceData(inst)
+			if err != nil {
+				l.Debug().Msg(err.Error())
+				continue
+			}
+
+			if data != nil {
+				l.Debug().Str("instance-id", data.Name).Msg("instance has the required metadata key")
+				mapKey := fmt.Sprintf("%s_%d", data.Address, data.Port)
+				maps[mapKey] = data
+			}
+		}
 	}
 
-	// TODO
-	_ = maps
-
-	return nil
+	return maps
 }
 
 func (a *awsCloudMap) getServicesIDs() ([]string, error) {
@@ -121,4 +138,41 @@ func (a *awsCloudMap) getInstances(servID string) ([]*servicediscovery.InstanceS
 	}
 
 	return out.Instances, nil
+}
+
+func (a *awsCloudMap) getServiceData(inst *servicediscovery.InstanceSummary) (*openapi.Service, error) {
+	if inst.Id == nil || (inst.Id != nil && len(*inst.Id) == 0) {
+		return nil, errors.New("instance has no id")
+	}
+
+	metadataVal := inst.Attributes[a.metadataKey]
+	if metadataVal == nil || (metadataVal != nil && len(*metadataVal) == 0) {
+		return nil, errors.New("instance does not have the required metadata key")
+	}
+
+	address := ""
+	if ipv6 := inst.Attributes[awsIPv6Attr]; ipv6 != nil && len(*ipv6) > 0 {
+		address = *ipv6
+	}
+	if ipv4 := inst.Attributes[awsIPv4Attr]; ipv4 != nil && len(*ipv4) > 0 {
+		address = *ipv4
+	}
+	if len(address) == 0 {
+		return nil, errors.New("instance has no address")
+	}
+
+	var port int32 = awsDefaultInstancePort
+	if instancePort := inst.Attributes[awsPortAttr]; instancePort != nil {
+		intPort, err := strconv.ParseInt(*instancePort, 10, 32)
+		if err == nil {
+			port = int32(intPort)
+		}
+	}
+
+	return &openapi.Service{
+		Address:  address,
+		Name:     *inst.Id,
+		Metadata: []openapi.Metadata{{Key: a.metadataKey, Value: *metadataVal}},
+		Port:     port,
+	}, nil
 }
