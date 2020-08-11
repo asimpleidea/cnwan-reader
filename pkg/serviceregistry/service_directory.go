@@ -39,8 +39,8 @@ type gcloudServDir struct {
 	baseParent  string
 }
 
-// New returns a handler for gcloud service directory
-func New(ctx context.Context, region, metadataKey, project, credsPath string) (Handler, error) {
+// NewServiceDirectoryHandler returns a handler for gcloud service directory
+func NewServiceDirectoryHandler(ctx context.Context, region, metadataKey, project, credsPath string) (Handler, error) {
 	jsonBytes, err := ioutil.ReadFile(credsPath)
 	if err != nil {
 		return nil, err

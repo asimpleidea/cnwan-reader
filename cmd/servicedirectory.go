@@ -76,7 +76,7 @@ func runServiceDirectory(cmd *cobra.Command, args []string) {
 	}
 
 	// Get the handler
-	sdHandler, err = serviceregistry.New(ctx, gcloudRegion, metadataKey, gcloudProject, credsPath)
+	sdHandler, err = serviceregistry.NewServiceDirectoryHandler(ctx, gcloudRegion, metadataKey, gcloudProject, credsPath)
 	if err != nil {
 		l.Fatal().Err(err).Msg("error while trying to connect to service directory")
 	}
