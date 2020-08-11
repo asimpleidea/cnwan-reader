@@ -18,11 +18,13 @@ package serviceregistry
 
 import (
 	"context"
+	"errors"
 
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/openapi"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/servicediscovery"
+	"github.com/rs/zerolog/log"
 )
 
 type awsCloudMap struct {
@@ -52,6 +54,42 @@ func NewCloudMapHandler(ctx context.Context, region, metadataKey string) (Handle
 }
 
 func (a *awsCloudMap) GetServices() map[string]*openapi.Service {
-	// TODO: Implement me
+	l := log.With().Str("func", "Handler.GetServices").Logger()
+	maps := map[string]*openapi.Service{}
+
+	// First, get services
+	services, err := a.getServicesIDs()
+	if err != nil {
+		l.Err(err).Msg("error while getting services")
+	}
+
+	// TODO: use for later
+	_, _ = maps, services
+
 	return nil
+}
+
+func (a *awsCloudMap) getServicesIDs() ([]string, error) {
+	l := log.With().Str("func", "Handler.awsCloudMap.getServicesIDs").Logger()
+
+	out, err := a.sd.ListServices(&servicediscovery.ListServicesInput{})
+	if err != nil {
+		return nil, err
+	}
+
+	if out == nil {
+		return nil, errors.New("received nil response")
+	}
+
+	servIDs := []string{}
+	for _, service := range out.Services {
+		if service.Id == nil || (service.Id != nil && len(*service.Id) == 0) {
+			l.Debug().Msg("a service with no/empty ID has been found and is going to be skipping...")
+			continue
+		}
+
+		servIDs = append(servIDs, *service.Id)
+	}
+
+	return servIDs, nil
 }
