@@ -63,8 +63,22 @@ func (a *awsCloudMap) GetServices() map[string]*openapi.Service {
 		l.Err(err).Msg("error while getting services")
 	}
 
-	// TODO: use for later
-	_, _ = maps, services
+	for _, servID := range services {
+		l = l.With().Str("service-id", servID).Logger()
+
+		// Get the instances
+		instances, err := a.getInstances(servID)
+		if err != nil {
+			l.Err(err).Msg("error while getting instances, skipping...")
+			continue
+		}
+
+		// TODO
+		_ = instances
+	}
+
+	// TODO
+	_ = maps
 
 	return nil
 }
@@ -92,4 +106,19 @@ func (a *awsCloudMap) getServicesIDs() ([]string, error) {
 	}
 
 	return servIDs, nil
+}
+
+func (a *awsCloudMap) getInstances(servID string) ([]*servicediscovery.InstanceSummary, error) {
+	out, err := a.sd.ListInstances(&servicediscovery.ListInstancesInput{
+		ServiceId: &servID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if out == nil {
+		return nil, errors.New("received nil response")
+	}
+
+	return out.Instances, nil
 }
