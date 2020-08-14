@@ -34,7 +34,7 @@ var gcloudProject string
 var gcloudRegion string
 var datastore services.Datastore
 var sendQueue queue.Queue
-var sdHandler serviceregistry.Handler
+var srHandler serviceregistry.Handler
 
 // servicedirectoryCmd represents the servicedirectory command
 var servicedirectoryCmd = &cobra.Command{
@@ -76,7 +76,7 @@ func runServiceDirectory(cmd *cobra.Command, args []string) {
 	}
 
 	// Get the handler
-	sdHandler, err = serviceregistry.NewServiceDirectoryHandler(ctx, gcloudRegion, metadataKey, gcloudProject, credsPath)
+	srHandler, err = serviceregistry.NewServiceDirectoryHandler(ctx, gcloudRegion, metadataKey, gcloudProject, credsPath)
 	if err != nil {
 		l.Fatal().Err(err).Msg("error while trying to connect to service directory")
 	}
@@ -111,7 +111,7 @@ func runServiceDirectory(cmd *cobra.Command, args []string) {
 }
 
 func processData() {
-	data := sdHandler.GetServices()
+	data := srHandler.GetServices()
 
 	events := datastore.GetEvents(data)
 	if len(events) > 0 {

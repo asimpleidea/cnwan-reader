@@ -20,7 +20,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/poller"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/queue"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/serviceregistry"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/services"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -61,5 +66,37 @@ func runCloudMap(cmd *cobra.Command, args []string) {
 		os.Setenv("AWS_SHARED_CREDENTIALS_FILE", credsPath)
 	}
 
-	// TODO...
+	// Get the handler
+	srHandler, err = serviceregistry.NewCloudMapHandler(ctx, awsRegion, metadataKey)
+	if err != nil {
+		l.Fatal().Err(err).Msg("error while trying to connect to cloud map")
+	}
+
+	// Get the datastore
+	datastore = services.NewDatastore()
+
+	// Get the queue
+	servsHandler, err := services.NewHandler(ctx, sanitizeAdaptorEndpoint(endpoint))
+	if err != nil {
+		l.Fatal().Err(err).Msg("error while trying to connect to cloud map")
+	}
+	sendQueue = queue.New(ctx, servsHandler)
+
+	// Get the poller
+	poll := poller.New(ctx, interval)
+	poll.SetPollFunction(processData)
+	poll.Start()
+
+	// Graceful shutdown
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+
+	<-sig
+	fmt.Println()
+
+	// Cancel the context and wait for objects that use it to receive
+	// the stop command
+	canc()
+
+	l.Info().Msg("good bye!")
 }
