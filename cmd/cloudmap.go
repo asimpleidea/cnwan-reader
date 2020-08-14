@@ -17,8 +17,15 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
+
+var awsRegion string
 
 // cloudmapCmd represents the cloudmap command
 var cloudmapCmd = &cobra.Command{
@@ -36,17 +43,23 @@ var cloudmapCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(cloudmapCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// cloudmapCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// cloudmapCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	cloudmapCmd.Flags().StringVar(&awsRegion, "region", "", "aws region location. Example: us-west-2")
 }
 
 func runCloudMap(cmd *cobra.Command, args []string) {
+	var err error
+	l := log.With().Str("func", "cmd.runCloudMap").Logger()
+	l.Info().Msg("starting...")
+
+	ctx, canc := context.WithCancel(context.Background())
+
+	// Parse flags
+	if len(awsRegion) == 0 {
+		l.Fatal().Err(fmt.Errorf("%s", "region not provided")).Msg("fatal error encountered")
+	}
+	if len(credsPath) > 0 {
+		os.Setenv("AWS_SHARED_CREDENTIALS_FILE", credsPath)
+	}
+
 	// TODO...
 }
