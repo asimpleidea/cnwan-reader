@@ -3,7 +3,10 @@
 CNWAN Reader watches a service registry for changes and sends events to an
 external handler for processing.
 
-The CNWAN Reader is part of the Cloud Native SD-WAN (CNWAN) project. Please check the [CNWAN documentation](https://github.com/CloudNativeSDWAN/cnwan-docs) for the general project overview and architecture. You can contact the CNWAN team at [cnwan@cisco.com](mailto:cnwan@cisco.com).
+The CNWAN Reader is part of the Cloud Native SD-WAN (CNWAN) project.
+Please check the [CNWAN documentation](https://github.com/CloudNativeSDWAN/cnwan-docs)
+for the general project overview and architecture. You can contact the CNWAN
+team at [cnwan@cisco.com](mailto:cnwan@cisco.com).
 
 ## Table of contents
 
@@ -13,6 +16,7 @@ The CNWAN Reader is part of the Cloud Native SD-WAN (CNWAN) project. Please chec
 * [Usage](#usage)
   * [CNWAN Adaptor](#cnwan-adaptor)
   * [Service Directory](#service-directory)
+  * [Cloud Map](#cloud-map)
   * [Example](#example)
 * [OpenAPI Specification](#openapi-specification)
 * [Docker](#docker)
@@ -34,10 +38,11 @@ Please follow this readme to know more about *OpenAPI*, *Adaptors* and *Supporte
 ## Supported Service Registries
 
 Currently, the CNWAN Reader can discover services/endpoints published to
-Google Cloud's [Service directory](https://cloud.google.com/service-directory).
-The project and region must be provided as arguments in the command line.  
-Read [Service Directory](#service-directory) to learn how CNWAN Reader works
-with Service Directory.
+Google Cloud's [Service directory](https://cloud.google.com/service-directory)
+and AWS [Cloud Map](https://aws.amazon.com/cloud-map/).
+
+Please refer to [Service Directory](#service-directory) and [Cloud Map](#cloud-map)
+to learn how CNWAN Reader works with these services.
 
 ## Installing
 
@@ -128,6 +133,35 @@ or read [this guide](https://cloud.google.com/iam/docs/creating-managing-service
 You can read Service Directory's [documentation](https://cloud.google.com/service-directory/docs)
 to learn more about it.
 
+### Cloud Map
+
+Use the `cloudmap` command to connect and discover all services registered on
+AWS Cloud Map:
+
+```bash
+./cnwan-reader cloudmap --region my-region
+
+# With a shorter alias
+./cnwan-reader cm --region my-region
+```
+
+When you use the CNWAN Reader with Cloud Map, you need to provide a
+[region](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html)
+and the path where your AWS credentials are stored. By default, CNWAN Reader
+will look for credentials in `$HOME/.aws/credentials`, as also specified by
+the [AWS CLI documention](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
+
+Nonetheless, you can override this behavior by specifiyng the path with
+`--credentials`.
+
+```bash
+./cnwan-reader cloudmap --credentials ./credentials/aws --region us-west-2
+```
+
+Refer to the links mentioned above and to Cloud Map's
+[official documentation](https://docs.aws.amazon.com/cloud-map/latest/api/Welcome.html)
+to learn more about AWS Credentials and Cloud Map, respectively.
+
 ### Example
 
 In the following example, the CNWAN Reader watches changes in
@@ -195,9 +229,7 @@ provide a valid credentials file.
 ### Mount Credentials
 
 In order to work properly, CNWAN Reader needs a valid credentials file, i.e. a
-Google Cloud Service Account.  
-To learn more about Google Cloud Service Accounts, please visit [this page](https://cloud.google.com/iam/docs/service-accounts)
-or read [this guide](https://cloud.google.com/iam/docs/creating-managing-service-accounts).
+Google Cloud Service Account or AWS credentials file.
 
 Supposing your credentials file is stored in `Desktop/cnwan-credentials` and
 is called `credentials.json`, use this command to mount the file under
@@ -210,6 +242,16 @@ servicedirectory \
 --project my-project \
 --region us-west2 \
 --credentials ./credentials/credentials.json
+```
+
+Another example, with Cloud Map:
+
+```bash
+docker run -v ~/Desktop/cnwan-credentials/aws:/credentials/aws \
+<my-image> \
+cloudmap \
+--region us-west-2 \
+--credentials ./credentials/aws
 ```
 
 As you can see, the path to the credentials file in the `--credentials`
