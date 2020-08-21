@@ -17,15 +17,10 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"os/signal"
 
-	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/poller"
-	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/queue"
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/serviceregistry"
-	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/services"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -56,8 +51,6 @@ func runCloudMap(cmd *cobra.Command, args []string) {
 	l := log.With().Str("func", "cmd.runCloudMap").Logger()
 	l.Info().Msg("starting...")
 
-	ctx, canc := context.WithCancel(context.Background())
-
 	// Parse flags
 	if len(awsRegion) == 0 {
 		l.Fatal().Err(fmt.Errorf("%s", "region not provided")).Msg("fatal error encountered")
@@ -67,36 +60,8 @@ func runCloudMap(cmd *cobra.Command, args []string) {
 	}
 
 	// Get the handler
-	srHandler, err = serviceregistry.NewCloudMapHandler(ctx, awsRegion, metadataKey)
+	srHandler, err = serviceregistry.NewCloudMapHandler(mainCtx, awsRegion, metadataKey)
 	if err != nil {
 		l.Fatal().Err(err).Msg("error while trying to connect to cloud map")
 	}
-
-	// Get the datastore
-	datastore = services.NewDatastore()
-
-	// Get the queue
-	servsHandler, err := services.NewHandler(ctx, sanitizeAdaptorEndpoint(endpoint))
-	if err != nil {
-		l.Fatal().Err(err).Msg("error while trying to connect to cloud map")
-	}
-	sendQueue = queue.New(ctx, servsHandler)
-
-	// Get the poller
-	poll := poller.New(ctx, interval)
-	poll.SetPollFunction(processData)
-	poll.Start()
-
-	// Graceful shutdown
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
-
-	<-sig
-	fmt.Println()
-
-	// Cancel the context and wait for objects that use it to receive
-	// the stop command
-	canc()
-
-	l.Info().Msg("good bye!")
 }

@@ -17,21 +17,34 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/poller"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/queue"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/serviceregistry"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/services"
 	"github.com/rs/zerolog"
 	l "github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
-var cfgFile string
-var debugMode bool
-var interval int
-var metadataKey string
-var credsPath string
-var endpoint string
+var (
+	mainCtx     context.Context
+	cancCtx     context.CancelFunc
+	debugMode   bool
+	interval    int
+	srHandler   serviceregistry.Handler
+	sendQueue   queue.Queue
+	datastore   services.Datastore
+	endpoint    string
+	metadataKey string
+	credsPath   string
+	poll        poller.Poller
+)
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -40,6 +53,16 @@ var rootCmd = &cobra.Command{
 	Long: `CNWAN Reader connects to a service registry and 
 observes changes about registered services, delivering found events to a
 a separate handler for processing.`,
+
+	PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		mainCtx, cancCtx = context.WithCancel(context.Background())
+		initObserveData()
+	},
+
+	PersistentPostRun: func(_ *cobra.Command, _ []string) {
+		poll.Start()
+		gracefulShutdown()
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -78,6 +101,25 @@ func initConfig() {
 	}())
 }
 
+func initObserveData() {
+	// Get the datastore
+	datastore = services.NewDatastore()
+
+	// Sanitize the endpoint
+	endpoint = sanitizeAdaptorEndpoint(endpoint)
+
+	// Get the queue
+	servsHandler, err := services.NewHandler(mainCtx, endpoint)
+	if err != nil {
+		l.Fatal().Err(err).Msg("error while trying to initialize a service handler")
+	}
+	sendQueue = queue.New(mainCtx, servsHandler)
+
+	// Get the poller
+	poll = poller.New(mainCtx, interval)
+	poll.SetPollFunction(processData)
+}
+
 func sanitizeAdaptorEndpoint(endp string) string {
 	endp = strings.Trim(endp, "/")
 
@@ -89,4 +131,28 @@ func sanitizeAdaptorEndpoint(endp string) string {
 	}
 
 	return endp
+}
+
+func gracefulShutdown() {
+	// Graceful shutdown
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+
+	<-sig
+	fmt.Println()
+
+	// Cancel the context and wait for objects that use it to receive
+	// the stop command
+	cancCtx()
+
+	l.Info().Msg("good bye!")
+}
+
+func processData() {
+	data := srHandler.GetServices()
+
+	events := datastore.GetEvents(data)
+	if len(events) > 0 {
+		sendQueue.Enqueue(events)
+	}
 }

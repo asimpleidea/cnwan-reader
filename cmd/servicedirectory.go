@@ -17,24 +17,17 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"os/signal"
 
-	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/poller"
-	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/queue"
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/serviceregistry"
-	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/services"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
-var gcloudProject string
-var gcloudRegion string
-var datastore services.Datastore
-var sendQueue queue.Queue
-var srHandler serviceregistry.Handler
+var (
+	gcloudProject string
+	gcloudRegion  string
+)
 
 // servicedirectoryCmd represents the servicedirectory command
 var servicedirectoryCmd = &cobra.Command{
@@ -61,8 +54,6 @@ func runServiceDirectory(cmd *cobra.Command, args []string) {
 	l := log.With().Str("func", "cmd.runServiceDirectory").Logger()
 	l.Info().Msg("starting...")
 
-	ctx, canc := context.WithCancel(context.Background())
-
 	// Parse flags
 	if len(gcloudRegion) == 0 {
 		l.Fatal().Err(fmt.Errorf("%s", "region not provided")).Msg("fatal error encountered")
@@ -76,45 +67,8 @@ func runServiceDirectory(cmd *cobra.Command, args []string) {
 	}
 
 	// Get the handler
-	srHandler, err = serviceregistry.NewServiceDirectoryHandler(ctx, gcloudRegion, metadataKey, gcloudProject, credsPath)
+	srHandler, err = serviceregistry.NewServiceDirectoryHandler(mainCtx, gcloudRegion, metadataKey, gcloudProject, credsPath)
 	if err != nil {
 		l.Fatal().Err(err).Msg("error while trying to connect to service directory")
-	}
-
-	// Get the datastore
-	datastore = services.NewDatastore()
-
-	// Get the queue
-	servsHandler, err := services.NewHandler(ctx, sanitizeAdaptorEndpoint(endpoint))
-	if err != nil {
-		l.Fatal().Err(err).Msg("error while trying to connect to service directory")
-	}
-	sendQueue = queue.New(ctx, servsHandler)
-
-	// Get the poller
-	poll := poller.New(ctx, interval)
-	poll.SetPollFunction(processData)
-	poll.Start()
-
-	// Graceful shutdown
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
-
-	<-sig
-	fmt.Println()
-
-	// Cancel the context and wait for objects that use it to receive
-	// the stop command
-	canc()
-
-	l.Info().Msg("good bye!")
-}
-
-func processData() {
-	data := srHandler.GetServices()
-
-	events := datastore.GetEvents(data)
-	if len(events) > 0 {
-		sendQueue.Enqueue(events)
 	}
 }
