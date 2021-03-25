@@ -16,3 +16,7 @@
 
 // Package cmd contains all commands used by the CN-WAN Reader.
 package cmd
+
+// TODO: version command
+// TODO: version command also prints the commit it is based on
+// TODO: before starting, check if a new version is available and if so print it on console.

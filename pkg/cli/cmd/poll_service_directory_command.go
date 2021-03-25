@@ -17,107 +17,114 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/cli/option"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/serviceregistry"
 	"github.com/spf13/cobra"
 )
 
-// TODO: maybe pass pollFlags instad of global
-func newPollServiceDirectoryCmd(pollOpts *option.PollOptions) *cobra.Command {
-	localFlags := option.ServiceDirectoryOptions{
-		Authentication: &option.ServiceDirectoryAuthenticationOptions{},
-	}
-	optionsPath := ""
+// newPollServiceDirectoryCmd defines the service directory command and returns
+// it so that it could be used as a subcommand.
+func newPollServiceDirectoryCmd(globalOpts *option.Global, pollOpts *option.Poll) *cobra.Command {
+	sdOpts := option.ServiceDirectory{}
+	sdAuth := option.ServiceDirectoryAuthentication{}
+	var metKeys []string
 
 	// -------------------------------
-	// Unmarshal and validation functions
+	// Define servicedirectory command
 	// -------------------------------
 
-	// unmarshal the file pointed by optionsPath and set the values found there
-	// to localFlags, unless already set.
-	// unmarshal := func() error {
-	// 	options := option.ServiceDirectoryOptions{}
-
-	// 	f, err := os.Open(optionsPath)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	defer f.Close()
-
-	// 	if err := yaml.NewDecoder(f).Decode(&options); err != nil {
-	// 		return err
-	// 	}
-
-	// 	// -------------------------------
-	// 	// Use data from options, if not set
-	// 	// -------------------------------
-
-	// 	if len(localFlags.ProjectID) == 0 {
-	// 		localFlags.ProjectID = options.ProjectID
-	// 	}
-
-	// 	if len(localFlags.Region) == 0 {
-	// 		localFlags.Region = options.Region
-	// 	}
-
-	// 	if len(localFlags.ServiceAccountPath) == 0 {
-	// 		localFlags.ServiceAccountPath = options.ServiceAccountPath
-	// 	}
-
-	// 	if len(localFlags.APIKey) == 0 {
-	// 		localFlags.APIKey = options.APIKey
-	// 	}
-
-	// 	return nil
-	// }
-
-	// -------------------------------
-	// Define poll command
-	// -------------------------------
-
-	// TODO: expand long
 	cmd := &cobra.Command{
-		Use:   "servicedirectory [flags]",
-		Short: "connect to Service Directory to get registered services",
-		Long: `This command connects to Google Cloud Service Directory and
-observes changes in services published in it, i.e. metadata, addresses and
-ports.
+		Use: `servicedirectory --annotations-keys,-k=KEY_1[,KEY_2,..]
+	[--project-id,-p=PROJECT_ID] [--region,-r=REGION]
+	[--service-account=SERVICE_ACCOUNT_PATH] [--help]`,
 
-In order to work, a project, location and valid credentials must be provided.
-Run --help to get a description of all the flags.`,
-		Example: "cnwan-reader poll servicedirectory --region us-west2 --api-key 12345ABCDEF",
+		Short: "connect to Google Service Directory to get registered services.",
+
+		Aliases: []string{"sd"},
+
+		Long: `servicedirectory connects to Google Cloud Service Directory and
+observes changes to published services and their endpoints.
+
+The only truly required option is --annotations-keys, or --metadata-keys which
+is only an alias to it, to provide the filter to apply when monitoring
+services. Only services that have *all* the annotations keys you provide will
+be observed.
+
+CN-WAN Reader needs to authenticate to Service Directory to work, together with
+a project ID and a region where Service Directory is enabled.
+You can provide the path to the service account JSON file with
+--service-account-path, a project ID with --project-id and a region with
+--region.
+If you don't provide these values, some attempts to retrieve them implictly
+will be made: i.e. searching inside gcloud cli default folder for the default
+credentials JSON file, environment variables or at the credentials injected
+inside the machine if you are running CN-WAN Reader inside a virtual machine
+in Google Cloud. You may override such values by providing either of
+--service-account-path, --project-id and/or --region, but if they are empty and
+they were not found implicitly then CN-WAN Reader will stop execution because
+it can't go on without those values.
+
+You can read https://cloud.google.com/iam/docs/service-accounts for more
+information about service acounts and authenticating to Google Cloud.
+
+OPTIONS:
+
+	--annotations-keys provides the filter to apply when monitoring services.
+	Only services that have *all* the annotations keys you provide here
+	will be observed. This is the only **required** option.
+
+	--metadata-keys is just an alias for --annotations-keys.
+
+	--service-account-path specifies the service account JSON file to be used
+	for authenticating to Google Cloud. Please consult Google Cloud
+	documentation on service accounts to understand how they are created and
+	how they work.
+	Fill this option if you want to use a service account different from
+	the default one, e.g. the ones created by the gcloud cli, if installed.
+
+	--project-id is the ID -- **not** the name -- of the project where Service
+	Directory is enabled. If empty, CN-WAN Reader will try to retrieve this
+	implictly as specified above. Execution will stop if the provided project
+	ID was not found or it was not possible to retrieve it implictly.
+
+	--region is the Service Directory region where to monitor services on. If
+	empty, a default region will be retrieved, i.e. the one where the virtual
+	machine is hosted in -- provided that CN-WAN Reader is running inside a
+	virtual machine in Google Cloud. Execution will fail if the region was not
+	found or it was not possible to retrieve this implictly.`,
+
+		Example: "servicedirectory -k traffic-profile --region us-west2",
+
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := persistentPreRunE(cmd, args); err != nil {
+				return err
+			}
+
+			if len(sdOpts.AnnotationsKeys) == 0 {
+				if len(metKeys) == 0 {
+					return fmt.Errorf("no annotation keys provided")
+				}
+
+				sdOpts.AnnotationsKeys = metKeys
+			}
+
+			if sdAuth.ServiceAccountPath != "" {
+				sdOpts.Authentication = &sdAuth
+			}
+
+			return nil
+		},
 
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// -------------------------------
-			// Parse the options
-			// -------------------------------
-
-			// TODO: implement this part
-			// if len(optionsPath) > 0 {
-			// 	v.Info().Str("options-path", optionsPath).Msg("parsing options file...")
-			// 	if err := unmarshal(); err != nil {
-			// 		log.Err(err).Msg("could not parse options file; skipping...")
-			// 	}
-			// }
-
-			// -------------------------------
-			// Validate
-			// -------------------------------
-
-			if len(localFlags.ProjectID) == 0 {
-				return fmt.Errorf("no project ID set")
+			a, err := serviceregistry.NewGoogleServiceDirectoryStateReader(context.Background(), sdOpts, globalOpts.Log)
+			if err != nil {
+				return err
 			}
-
-			if len(localFlags.Region) == 0 {
-				return fmt.Errorf("no region set")
-			}
-
-			if len(localFlags.Authentication.APIKey) == 0 && len(localFlags.Authentication.ServiceAccountPath) == 0 {
-				localFlags.Authentication = nil
-			}
-
-			pollOpts.ServiceDirectory = &localFlags
+			a.GetCurrentState(context.Background())
+			// read.Poll(gloabalOpts, logOpts, WithServiceDirectory(opts.ServiceDirectory))
 			return nil
 		},
 	}
@@ -126,51 +133,11 @@ Run --help to get a description of all the flags.`,
 	// Define flags
 	// -------------------------------
 
-	cmd.Flags().StringVar(&localFlags.ProjectID, "project-id", "", "the project ID to use")
-	cmd.Flags().StringVar(&localFlags.Region, "region", "", "gcloud region location. Example: us-west2")
-	cmd.Flags().StringVar(&localFlags.Authentication.ServiceAccountPath, "service-account", "", "path to the gcp service account. Example: ./service-account.json")
-	cmd.Flags().StringVar(&localFlags.Authentication.APIKey, "api-key", "", "api-key to use for authentication")
-	cmd.Flags().StringVar(&optionsPath, "options", "", "the path to the yaml file containing options")
+	cmd.Flags().StringVarP(&sdOpts.ProjectID, "project-id", "p", "", "the project ID to use")
+	cmd.Flags().StringVarP(&sdOpts.Region, "region", "r", "", "gcloud region location. Example: us-west2")
+	cmd.Flags().StringVar(&sdAuth.ServiceAccountPath, "service-account-path", "", "path to the gcp service account. Example: ./service-account.json")
+	cmd.Flags().StringSliceVarP(&sdOpts.AnnotationsKeys, "annotations-keys", "k", []string{}, "a list of comma-separated metadata keys to look for. Example: traffic-profile,replicas")
+	cmd.Flags().StringSliceVar(&metKeys, "metadata-keys", []string{}, "an alias for --annotation-keys")
 
 	return cmd
 }
-
-// func optionsFromFile(optionsPath string) (*option.ReaderOptions, error) {
-// 	f, err := os.Open(optionsPath)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer f.Close()
-
-// 	var options option.ReaderOptions
-// 	if err := yaml.NewDecoder(f).Decode(&options); err != nil {
-// 		return nil, err
-// 	}
-
-// 	return &options, nil
-// }
-
-// TODO: expand this
-// func mergeReaderFlags(cmd *cobra.Command, cli, file *option.ReaderOptions) (*option.ReaderOptions, error) {
-// 	if !cmd.Flag("verbose").Changed {
-// 		cli.Verbose = file.Verbose
-// 	}
-
-// 	if !cmd.Flag("adaptor-url").Changed && len(file.AdaptorURL) > 0 {
-// 		cli.AdaptorURL = file.AdaptorURL
-// 	}
-
-// 	if !cmd.Flag("required-metadata-keys").Changed && len(file.RequiredMetadataKeys) > 0 {
-// 		cli.RequiredMetadataKeys = file.RequiredMetadataKeys
-// 	}
-
-// 	if !cmd.Flag("").Changed && len(file.RequiredMetadataKeys) > 0 {
-// 		cli.RequiredMetadataKeys = file.RequiredMetadataKeys
-// 	}
-
-// 	return cli, nil
-// }
-
-// func sanitizeLocalhost(u string) (string, error) {
-
-// }

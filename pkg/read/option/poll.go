@@ -1,4 +1,4 @@
-// Copyright © 2020 Cisco
+// Copyright © 2021 Cisco
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,23 +14,24 @@
 //
 // All rights reserved.
 
-package main
+package option
 
-import (
-	"fmt"
-	"os"
+import cliopts "github.com/CloudNativeSDWAN/cnwan-reader/pkg/cli/option"
 
-	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/cli/cmd"
-)
+type PollOptions func(*cliopts.Poll)
 
-func main() {
-	// -------------------------------
-	// Get and run the root command
-	// -------------------------------
-	rootCmd := cmd.NewRootCommand()
+func WithServiceDirectory(sdOpts *cliopts.ServiceDirectory) PollOptions {
+	return func(optp *cliopts.Poll) {
+		// TODO: implement this
+		// optp.CloudMap = nil
+		// optp.ServiceDirectory = sdOpts
+	}
+}
 
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+func WithCloudMap(cmOpts *cliopts.CloudMap) PollOptions {
+	return func(optp *cliopts.Poll) {
+		// TODO: implement this
+		// optp.ServiceDirectory = nil
+		// optp.CloudMap = cmOpts
 	}
 }

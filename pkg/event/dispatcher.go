@@ -181,13 +181,13 @@ func (c *Dispatcher) Work(ctx context.Context) {
 		// -------------------------------
 		// Is queue empty?
 		// -------------------------------
-
+		l.Info().Msg("acquired lock")
 		if len(c.queue) == 0 {
 
 			// Sleep until someone wakes us up.
 			// When it happens go to next iteration an acquire the lock again.
 			c.lock.Unlock()
-
+			l.Info().Msg("release lock and sleeping")
 			select {
 			case <-c.wakeup:
 				continue
@@ -205,5 +205,16 @@ func (c *Dispatcher) Work(ctx context.Context) {
 		c.lock.Unlock()
 
 		// TODO: send data
+		time.Sleep(10 * time.Second)
+		l.Info().Msg("finished")
+	}
+
+	l.Info().Msg("worker exited")
+}
+
+func Work(evChan chan Operation) {
+	// TODO: do something with the event
+	for ev := range evChan {
+		_ = ev
 	}
 }

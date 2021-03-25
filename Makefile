@@ -15,7 +15,8 @@ update-gomod:
 	go mod verify
 
 # Build this
-build: test
+# TODO: uncomment this
+build: #test
 	go build -a -o cnwan-reader *.go
 
 test:

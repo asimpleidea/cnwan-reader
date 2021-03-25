@@ -19,211 +19,154 @@ package serviceregistry
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
-	"strings"
-	"time"
 
-	sd "cloud.google.com/go/servicedirectory/apiv1beta1"
+	"cloud.google.com/go/compute/metadata"
+	servicedirectory "cloud.google.com/go/servicedirectory/apiv1"
 	op "github.com/CloudNativeSDWAN/cnwan-operator/pkg/servregistry"
 	optr "github.com/CloudNativeSDWAN/cnwan-reader/pkg/cli/option"
-	"google.golang.org/api/iterator"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/internal"
+	"github.com/rs/zerolog"
+	aug "golang.org/x/oauth2/google"
 	optg "google.golang.org/api/option"
-	sdpb "google.golang.org/genproto/googleapis/cloud/servicedirectory/v1beta1"
+	servicedirectorypb "google.golang.org/genproto/googleapis/cloud/servicedirectory/v1"
 )
 
+// TODO: this may not be useful
 type CurrentState struct {
 	Namespaces map[string]*op.Namespace // namespace-name => namespace
 	Services   map[string]*op.Service   // service-name => service
 	Endpoints  map[string]*op.Endpoint  // endpoint-name => endpoint
 }
 
-type GoogleServiceDirectory struct {
-	client   *sd.RegistrationClient
-	basePath string
+type GoogleServiceDirectoryStateReader struct {
+	client *servicedirectory.RegistrationClient
+	opts   optr.ServiceDirectory
+	log    zerolog.Logger
+	vlog   zerolog.Logger
+	keys   map[string]bool
 }
 
-func NewGoogleServiceDirectoryReader(ctx context.Context, opts optr.ServiceDirectoryOptions) (*GoogleServiceDirectory, error) {
-	// TODO: this version does not implement APIKey and will be introduced on
-	// next PR/release.
-	// TODO: this version still uses v1beta1 and will use v1 on next PR/release.
-	// TODO: on next version perform a TestIAMPermissions before doing anything else?
-	var canc context.CancelFunc
-	if ctx == nil {
-		ctx, canc = context.WithTimeout(context.Background(), time.Minute)
-		defer canc()
-	}
+func NewGoogleServiceDirectoryStateReader(ctx context.Context, opts optr.ServiceDirectory, lopts optr.Log) (*GoogleServiceDirectoryStateReader, error) {
+	// -------------------------------
+	// Init and setups
+	// -------------------------------
 
-	cli, err := sd.NewRegistrationClient(ctx, generateOptsForGSD(opts)...)
+	l, v := func() (zerolog.Logger, zerolog.Logger) {
+		log := internal.GetLogger(lopts)
+		return log.Regular().With().Str("name", "ServiceDirectoryStateReader").Logger(), log.Verbose().With().Str("name", "ServiceDirectoryStateReader").Logger()
+	}()
+
+	// -------------------------------
+	// Get the client
+	// -------------------------------
+
+	v.Info().Msg("loading credentials...")
+	cli, err := servicedirectory.NewRegistrationClient(ctx, createSDOpts(opts, l, v)...)
 	if err != nil {
 		return nil, err
 	}
+	l.Info().Msg("successfully retrieved credentials")
 
-	return &GoogleServiceDirectory{
-		client:   cli,
-		basePath: path.Join("projects", opts.ProjectID, "locations", opts.Region),
-	}, nil
-}
-
-func (g *GoogleServiceDirectory) GetCurrentState(ctx context.Context, keys []string) (*CurrentState, error) {
 	// -------------------------------
-	// Init
+	// Build the base path
 	// -------------------------------
 
-	keyFilter := func() string {
-		if len(keys) == 0 {
-			return ""
+	if opts.ProjectID != "" {
+		v.Info().Str("project-id", opts.ProjectID).Msg("using project ID provided with options")
+	} else {
+		if opts.Authentication != nil && opts.Authentication.ServiceAccountPath != "" {
+			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", opts.Authentication.ServiceAccountPath)
 		}
 
-		filters := make([]string, len(keys))
-		for i := 0; i < len(keys); i++ {
-			filters[i] = fmt.Sprintf("metadata.%s!=''", keys[i])
-		}
-
-		return strings.Join(filters, " AND ")
-	}()
-
-	var canc context.CancelFunc
-	if ctx == nil {
-		ctx, canc = context.WithTimeout(context.Background(), time.Minute)
-		defer canc()
-	}
-
-	namespaces := map[string]*op.Namespace{}
-	services := map[string]*op.Service{}
-	endpoints := map[string]*op.Endpoint{}
-
-	// -------------------------------
-	// Get namespaces
-	// -------------------------------
-
-	req := &sdpb.ListNamespacesRequest{Parent: g.basePath}
-	it := g.client.ListNamespaces(ctx, req)
-	if it == nil {
-		return nil, fmt.Errorf("no namespaces")
-	}
-
-	for {
-		nsResp, err := it.Next()
+		v.Info().Msg("no project ID set, trying to retrieve it implictly...")
+		cred, err := aug.FindDefaultCredentials(context.Background())
 		if err != nil {
-			if err == iterator.Done {
-				break
-			}
-
-			fmt.Println("err ns list", err)
-			continue
+			return nil, err
 		}
-
-		// -------------------------------
-		// Get services
-		// -------------------------------
-
-		srvReq := &sdpb.ListServicesRequest{Parent: nsResp.Name, Filter: keyFilter}
-		sv := g.client.ListServices(ctx, srvReq)
-		if sv == nil {
-			continue
-		}
-
-		for {
-			svResp, err := sv.Next()
-			if err != nil {
-				if err == iterator.Done {
-					break
-				}
-
-				break
-			}
-
-			// -------------------------------
-			// Get endpoints
-			// -------------------------------
-
-			epReq := &sdpb.ListEndpointsRequest{Parent: svResp.Name}
-			ep := g.client.ListEndpoints(ctx, epReq)
-
-			for {
-				epResp, err := ep.Next()
-				if err != nil {
-					if err == iterator.Done {
-						break
-					}
-
-					break
-				}
-
-				endpoints[epResp.Name] = &op.Endpoint{
-					Name:     epResp.Name,
-					NsName:   nsResp.Name,
-					ServName: svResp.Name,
-					Address:  epResp.Address,
-					Port:     epResp.Port,
-					Metadata: func() map[string]string {
-						// TODO: copy other metadata?
-						if len(epResp.Metadata) > 0 {
-							return epResp.Metadata
-						}
-
-						return map[string]string{}
-					}(),
-				}
-			}
-
-			services[svResp.Name] = &op.Service{
-				Name:   svResp.Name,
-				NsName: nsResp.Name,
-				Metadata: func() map[string]string {
-					// TODO: copy other metadata?
-					if len(svResp.Metadata) > 0 {
-						return svResp.Metadata
-					}
-
-					return map[string]string{}
-				}(),
-			}
-
-			// Insert the namespace. Here to avoid inserting it if the
-			// namespace had no services.
-			if _, exists := namespaces[nsResp.Name]; !exists {
-				namespaces[nsResp.Name] = &op.Namespace{
-					Name: nsResp.Name,
-					Metadata: func() map[string]string {
-						// TODO: copy other metadata?
-						if len(nsResp.Labels) > 0 {
-							return nsResp.Labels
-						}
-
-						return map[string]string{}
-					}(),
-				}
-			}
-		}
+		opts.ProjectID = cred.ProjectID
+		v.Info().Str("project-id", cred.ProjectID).Msg("successfully retrieved projectID")
 	}
 
-	return &CurrentState{
-		Endpoints:  endpoints,
-		Services:   services,
-		Namespaces: namespaces,
+	if opts.Region != "" {
+		v.Info().Str("region", opts.Region).Msg("using region provided with options")
+	} else {
+		v.Info().Msg("no region set, trying to retrieve it implicitly...")
+
+		if !metadata.OnGCE() {
+			return nil, fmt.Errorf("could not retrieve region")
+		}
+
+		v.Info().Msg("retrieving default region for project...")
+		defRegion, err := metadata.ProjectAttributeValue("google-compute-default-region")
+		if err != nil {
+			return nil, fmt.Errorf("could not get default region from project")
+		}
+		v.Info().Str("google-compute-default-region", defRegion).Msg("successfully retrieved region")
+		opts.Region = defRegion
+	}
+
+	return &GoogleServiceDirectoryStateReader{
+		client: cli,
+		opts:   opts,
+		log:    l,
+		vlog:   v,
+		keys:   internal.FromSliceToMap(opts.AnnotationsKeys),
 	}, nil
 }
 
-func (g *GoogleServiceDirectory) CloseClient() {
-	if g.client != nil {
-		g.client.Close()
+func (g *GoogleServiceDirectoryStateReader) buildPath(res ...string) (resPath string) {
+	resPath = path.Join("projects", g.opts.ProjectID, "locations", g.opts.Region)
+
+	if len(res) > 0 {
+		resPath = path.Join(resPath, "namespaces", res[0])
+
+		if len(res) > 1 {
+			resPath = path.Join(resPath, "services", res[1])
+
+			if len(res) > 2 {
+				resPath = path.Join(resPath, "endpoints", res[2])
+			}
+		}
 	}
+
+	return
 }
 
-func generateOptsForGSD(sdOpts optr.ServiceDirectoryOptions) (opts []optg.ClientOption) {
-	opts = []optg.ClientOption{}
-	if sdOpts.Authentication == nil {
+func (g *GoogleServiceDirectoryStateReader) GetCurrentState(ctx context.Context) {
+	ns := g.client.ListNamespaces(context.Background(), &servicedirectorypb.ListNamespacesRequest{
+		Parent: g.buildPath(),
+	})
+	for {
+		nextNs, err := ns.Next()
+		if err != nil {
+			g.log.Info().Msg(err.Error())
+			return
+		}
+
+		g.log.Info().Msg(nextNs.Name)
+	}
+
+	// TODO: implement me
+}
+
+func (g *GoogleServiceDirectoryStateReader) Close() {
+	g.client.Close()
+}
+
+func createSDOpts(opts optr.ServiceDirectory, l, v zerolog.Logger) (gopts []optg.ClientOption) {
+	gopts = []optg.ClientOption{}
+
+	if opts.Authentication == nil {
+		v.Info().Msg("performing implicit authentication...")
 		return
 	}
 
-	auth := sdOpts.Authentication
-	if len(auth.ServiceAccountPath) > 0 {
-		opts = append(opts, optg.WithCredentialsFile(auth.ServiceAccountPath))
-	}
-
-	if len(auth.APIKey) > 0 {
-		opts = append(opts, optg.WithAPIKey(auth.APIKey))
+	if opts.Authentication.ServiceAccountPath != "" {
+		v.Info().Str("service-account-path", opts.Authentication.ServiceAccountPath).Msg("using service account provided from options")
+		gopts = []optg.ClientOption{optg.WithCredentialsFile(opts.Authentication.ServiceAccountPath)}
+		return
 	}
 
 	return

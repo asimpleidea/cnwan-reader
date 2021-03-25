@@ -1,4 +1,4 @@
-// Copyright © 2020 Cisco
+// Copyright © 2021 Cisco
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,23 +14,6 @@
 //
 // All rights reserved.
 
-package main
-
-import (
-	"fmt"
-	"os"
-
-	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/cli/cmd"
-)
-
-func main() {
-	// -------------------------------
-	// Get and run the root command
-	// -------------------------------
-	rootCmd := cmd.NewRootCommand()
-
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-}
+// Package option...
+// TODO: expand doc
+package option

@@ -31,3 +31,19 @@ type DispatcherOptions struct {
 
 	// TODO: add other options
 }
+
+type OperationMethod string
+
+const (
+	CreateOperation OperationMethod = "CREATE"
+	UpdateOperation OperationMethod = "UPDATE"
+	DeleteOperation OperationMethod = "DELETE"
+)
+
+type Operation struct {
+	Method  OperationMethod
+	Service Service
+}
+
+type Service struct {
+}

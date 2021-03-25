@@ -17,120 +17,110 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/cli/option"
+	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/serviceregistry"
 	"github.com/spf13/cobra"
 )
 
-// TODO: maybe pass pollFlags instad of global
-func newPollCloudMapCmd(pollOpts *option.PollOptions) *cobra.Command {
-	localFlags := option.CloudMapOptions{
-		Authentication: &option.CloudMapAuthenticationOptions{},
-	}
-	optionsPath := ""
+// newPollCloudMapCmd defines the cloud map command and returns it so that it
+// could be used as a subcommand.
+func newPollCloudMapCmd(globalOpts *option.Global, pollOpts *option.Poll) *cobra.Command {
+	cmOpts := option.CloudMap{}
+	cmAuth := option.CloudMapAuthentication{}
+	var metKeys []string
 
 	// -------------------------------
-	// Unmarshal and validate functions
+	// Define cloudmap command
 	// -------------------------------
 
-	// unmarshal the file pointed by optionsPath and set the values found there
-	// to localFlags, unless already set.
-	// unmarshal := func() error {
-	// 	options := option.CloudMapOptions{}
-
-	// 	f, err := os.Open(optionsPath)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	defer f.Close()
-
-	// 	if err := yaml.NewDecoder(f).Decode(&options); err != nil {
-	// 		return err
-	// 	}
-
-	// 	// -------------------------------
-	// 	// Use data from options, if not set
-	// 	// -------------------------------
-
-	// 	if len(localFlags.Region) == 0 {
-	// 		localFlags.Region = options.Region
-	// 	}
-
-	// 	if len(localFlags.CredentialsPath) == 0 {
-	// 		localFlags.CredentialsPath = options.CredentialsPath
-	// 	}
-
-	// 	return nil
-	// }
-
-	// // validate data in localFlags
-	// validate := func() error {
-	// 	if len(localFlags.Region) == 0 {
-	// 		return fmt.Errorf("no region set")
-	// 	}
-
-	// 	return nil
-	// }
-
-	// -------------------------------
-	// Define poll command
-	// -------------------------------
-
-	// TODO: expand long
 	cmd := &cobra.Command{
-		Use:   "cloudmap [flags]",
-		Short: "connect to Cloud Map to get registered services",
-		Long: `cloudmap connects to AWS CloudMap and
-observes changes to services published in it, i.e. metadata, addresses and
-ports.
-	
-For this to work, a valid region must be provided with --region and the
-aws credentials must be properly set.
+		Use: `cloudmap --attribute-keys,-k=KEY_1[,KEY_2,...] 
+	[--credentials-path=PATH] [--region,-r=REGION] [--profile,-p=PROFILE]
+	[--help,-h]`,
 
-Unless a different credentials path is defined with --credentials-path,
-$HOME/.aws/credentials on Linux/Unix and %USERPROFILE%\.aws\credentials on
-Windows will be used instead. Alternatively, credentials path can be set
-with environment variables. For a complete list of alternatives, please
-refer to AWS Session documentation, but, to keep things simple, we suggest you
-use the default one.
-Run --help to get a description of all the flags.`,
-		Example: "cnwan-reader poll cloudmap --region us-west-2 --credentials path/to/credentials/file",
+		Short: "connect to AWS Cloud Map to get registered services.",
+
+		Aliases: []string{"cm"},
+
+		Long: `cloudmap connects to AWS CloudMap and observes changes to
+registered services and their instances.
+
+The only truly required option is --attribute-keys, or --metadata-keys which
+is only an alias to it, to provide the filter to apply when monitoring
+services. Only services that have *all* the attributes keys you provide will
+be observed.
+
+CN-WAN Reader needs to authenticate to CloudMap to work, and a credentials file
+must be used to do that.
+If you have the aws cli installed and want to use the default
+configuration you can leave all options empty, apart from --attribute-keys,
+as all the other options will just override configurations. The default
+credentials path is $HOME/.aws/credentials on Linux/Unix and
+%USERPROFILE%\.aws\credentials on Windows.
+
+You can read
+https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html
+to learn how to set environment variables if your machines already have them
+set or if you prefer to do that instead.
+
+OPTIONS:
+
+	--attributes-keys provides the filter to apply when monitoring services.
+		Only services that have *all* the attributes keys you provide here
+		will be observed. This is the only **required** option.
+
+	--metadata-keys is just an alias for --attributse-keys.
+
+	--credentials-file-path specifies the credentials file to be used for
+		authenticating to AWS. Please consult AWS documentation on credentials
+		files to understand how they are created and how they work.
+		Fill this option if you want to use a credentials file different from
+		the default one, e.g. the ones created by the aws cli, if installed.
+
+	--profile is used to override the default profile and authenticate as
+		another profile. If not set, the default one inside the provided
+		credentials file will be used, i.e. the one used by the aws cli,
+		if installed.
+
+	--region overrides the region to use. If not set, the default region from
+		the provided credentials file will be used. Use this in case the
+		CloudMap services are on a region different from the one in your
+		provided credentials file.`,
+
+		Example: `cloudmap --k traffic-profile --region us-west-2 \
+	--credentials path/to/credentials/file`,
 
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			// -------------------------------
-			// Parse the options
-			// -------------------------------
-
-			// if len(optionsPath) > 0 {
-			// 	v.Info().Str("options-path", optionsPath).Msg("parsing options file...")
-			// 	if err := unmarshal(); err != nil {
-			// 		log.Err(err).Msg("could not parse options file; skipping...")
-			// 	}
-			// }
-
-			// -------------------------------
-			// Validate
-			// -------------------------------
-
-			if len(localFlags.Region) == 0 {
-				return fmt.Errorf("no region set")
+			if err := persistentPreRunE(cmd, args); err != nil {
+				return err
 			}
 
-			if len(localFlags.Authentication.CredentialsPath) == 0 {
-				localFlags.Authentication = nil
+			if len(cmOpts.AttributesKeys) == 0 {
+				if len(metKeys) == 0 {
+					return fmt.Errorf("no attribute keys provided")
+				}
+				cmOpts.AttributesKeys = metKeys
 			}
-			// if err := validate(); err != nil {
-			// 	log.Err(err).Msg("error while parsing options; exiting...")
-			// 	return cmd.Help()
-			// }
 
-			pollOpts.CloudMap = &localFlags
+			if cmAuth.CredentialsFilePath != "" || cmAuth.Profile != "" {
+				cmOpts.Authentication = &cmAuth
+			}
+
 			return nil
 		},
 
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: implement me
+			// TODO: finish implementation for this.
+			a, err := serviceregistry.NewAWSCloudMapStateReader(context.Background(), cmOpts, globalOpts.Log)
+			if err != nil {
+				return err
+			}
+
+			a.GetCurrentState(context.Background())
+			// return Poll(globalOpts, pollOpts, option.WithCloudMap())
 			return nil
 		},
 	}
@@ -139,9 +129,11 @@ Run --help to get a description of all the flags.`,
 	// Define flags
 	// -------------------------------
 
-	cmd.Flags().StringVar(&localFlags.Region, "region", "", "gcloud region location. Example: us-west-2")
-	cmd.Flags().StringVar(&localFlags.Authentication.CredentialsPath, "credentials-path", "", "path to aws credentials. Example: ./credentials")
-	cmd.Flags().StringVar(&optionsPath, "options", "", "the path to the yaml file containing options")
+	cmd.Flags().StringVar(&cmAuth.CredentialsFilePath, "credentials-file-path", "", "path to the AWS credentials.")
+	cmd.Flags().StringVarP(&cmOpts.Region, "region", "r", "", "AWS region location. Example: us-west-2")
+	cmd.Flags().StringVar(&cmAuth.Profile, "profile", "", "the AWS profile to use.")
+	cmd.Flags().StringSliceVarP(&cmOpts.AttributesKeys, "attributes-keys", "k", []string{}, "a comma-separated list of attributes keys to look for in services, e.g.: traffic-profile,stage.")
+	cmd.Flags().StringSliceVar(&metKeys, "metadata-keys", []string{}, "alias for --attribute-keys. If --attribute-keys is present, this is ignored.")
 
 	return cmd
 }

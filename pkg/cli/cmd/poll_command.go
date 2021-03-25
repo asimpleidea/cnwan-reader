@@ -17,33 +17,71 @@
 package cmd
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/cli/option"
 	"github.com/CloudNativeSDWAN/cnwan-reader/pkg/internal"
+	_ "github.com/CloudNativeSDWAN/cnwan-reader/pkg/read"
 	"github.com/spf13/cobra"
 )
 
-func newPollCommand(globalOpts *option.ReaderOptions) *cobra.Command {
+// newPollCommand defines the poll command, including its flags and the
+// subcommands.
+func newPollCommand(globalOpts *option.Global) *cobra.Command {
+	pollOpts := option.Poll{}
+
 	// -------------------------------
 	// Define poll command
 	// -------------------------------
 
-	localFlags := option.PollOptions{}
-
-	// TODO: expand long
 	cmd := &cobra.Command{
-		Use:   "poll [servicedirectory|cloudmap] [flags]",
-		Short: "poll a service registry to discover changes",
-		Long: `poll uses a polling mechanism to detect changes to a
-service registry. This means that the CN-WAN Reader will perform http calls to
-the service registry, parse the result and see the difference.
+		Use: "poll servicedirectory|cloudmap [OPTIONS] [--help]",
 
-This method is implemented only for those service registries that do not
-provide a better way to do this: include --help or -h to know which ones are
-included under this command`,
-		Example: "poll cloudmap --region us-west-2 --credentials path/to/credentials/file",
-		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-			globalOpts.Poll = &localFlags
-			// TODO: implement me
+		Short: "periodically check a service registry for changes.",
+
+		Aliases: []string{"po"},
+
+		Long: `poll uses a polling mechanism to detect changes to a
+service registry, that is performing periodic calls to the the service
+registry's API to retrieve the current state of the services that are
+registered in it.
+
+This command must be used when wanting to check service registries that
+do not provide their own watching/observation mechanisms (yet), such as
+Google Service Directory or AWS Cloud Map.
+
+The current sitation is then confronted with the previous state that was
+cached inside the CN-WAN Reader and, if different, the new data is then sent
+to the adaptor. For example, if a service is not found anymore, a DELETE is
+sent to the adaptor.
+
+Currently, only Google Service Directory and AWS Cloud Map are supported with
+this command and must be used as cnwan-reader poll servicedirectory or
+cnwan-reader poll cloudmap respectively. Whichever you intend to use, run
+--help to get more information about it.
+
+OPTIONS:
+
+	--poll-interval must be used to set the duration between two consecutive
+	checks: it accepts durations in a human-friendly manner, such as 1m for
+	1 minute, 30s for 30 seconds or even combinations such 1m20s if you want
+	to perform checks every minute and 20 seconds. What value you choose
+	depends on how frequent changes to the services are made and/or how quickly
+	you want to react to them. You cannot set values lower than 1 second (1s).`,
+
+		Example: `poll cloudmap --k traffic-profile --region us-west-2 \
+	--credentials path/to/credentials/file`,
+
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := persistentPreRunE(cmd, args); err != nil {
+				return err
+			}
+
+			if pollOpts.Interval < time.Second {
+				return fmt.Errorf("provided polling interval is not valid")
+			}
+
 			return nil
 		},
 	}
@@ -52,14 +90,14 @@ included under this command`,
 	// Define persistent flags
 	// -------------------------------
 
-	cmd.PersistentFlags().DurationVar(&localFlags.Interval, "poll-interval", internal.DefaultPollInterval, "interval between two consecutive polls")
+	cmd.PersistentFlags().DurationVarP(&pollOpts.Interval, "poll-interval", "i", internal.DefaultPollInterval, "interval between two consecutive requests.")
 
 	// -------------------------------
 	// Define sub commands flags
 	// -------------------------------
 
-	cmd.AddCommand(newPollServiceDirectoryCmd(&localFlags))
-	cmd.AddCommand(newPollCloudMapCmd(&localFlags))
+	cmd.AddCommand(newPollServiceDirectoryCmd(globalOpts, &pollOpts))
+	cmd.AddCommand(newPollCloudMapCmd(globalOpts, &pollOpts))
 
 	return cmd
 }
