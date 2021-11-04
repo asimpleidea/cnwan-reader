@@ -44,7 +44,7 @@ var rootCmd = &cobra.Command{
 	TraverseChildren: true,
 	Use:              "cnwan-reader",
 	Short:            "CN-WAN Reader observes changes in metadata in a service registry.",
-	Long: `CN-WAN Reader connects to a service registry and 
+	Long: `CN-WAN Reader connects to a service registry and
 observes changes about registered services, delivering found events to a
 a separate handler for processing.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
